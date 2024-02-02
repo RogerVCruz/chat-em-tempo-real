@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import dotenv from "dotenv";
 import fastify from "fastify";
 import fastifyCors from "@fastify/cors";
@@ -43,8 +44,6 @@ async function buildServer() {
   }
 
   app.io.on("connection", async (io) => {
-    console.log("Client connected");
-
     const incResult = await publisher.incr(CONNECTION_COUNT_KEY);
 
     connectedClients++;
@@ -54,7 +53,13 @@ async function buildServer() {
       String(incResult)
     );
 
-    io.on(NEW_MESSAGE_CHANNEL, async ({ message }) => {
+    io.on(NEW_MESSAGE_CHANNEL, async (payload) => {
+      const message = payload.message;
+
+      if (!message) {
+        return;
+      }
+
       await publisher.publish(NEW_MESSAGE_CHANNEL, message.toString());
     });
 
@@ -81,14 +86,34 @@ async function buildServer() {
     }
 
     console.log(
-      `${count} clients connected to ${CONNECTION_COUNT_UPDATED_CHANNEL} channel`
+      `${count} clients subscribe to ${CONNECTION_COUNT_UPDATED_CHANNEL} channel`
     );
+  });
+
+  subscriber.subscribe(NEW_MESSAGE_CHANNEL, (err, count) => {
+    if (err) {
+      console.error(`Error subscribing to ${NEW_MESSAGE_CHANNEL}`);
+      return;
+    }
+
+    console.log(`${count} clients connected to ${NEW_MESSAGE_CHANNEL} channel`);
   });
 
   subscriber.on("message", (channel, text) => {
     if (channel === CONNECTION_COUNT_UPDATED_CHANNEL) {
       app.io.emit(CONNECTION_COUNT_UPDATED_CHANNEL, {
         count: text,
+      });
+
+      return;
+    }
+
+    if (channel === NEW_MESSAGE_CHANNEL) {
+      app.io.emit(NEW_MESSAGE_CHANNEL, {
+        message: text,
+        id: randomUUID(),
+        createdAt: new Date(),
+        port: PORT,
       });
 
       return;
